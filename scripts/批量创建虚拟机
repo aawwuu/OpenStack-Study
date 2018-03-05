@@ -1,0 +1,64 @@
+#! /bin/sh
+
+net=231e49ee-7c81-413e-a669-184f2044924d
+image=2f8c90d4-aa09-492d-969e-bcaa4ecbf2e2
+count=20
+server_name=new_server
+
+create_servers()
+{
+    nova boot \
+    --flavor flavor1 \
+    --security-group default \
+    --availability-zone nova \
+    --nic net-id=$net \
+    --block-device id=$image,source=image,dest=volume,volume_type=SSD,bootindex=0,size=100,shutdown=remove \
+    --min-count $count \
+    --meta vif_model=e1000 \
+    --meta admin_pass=123@qwe \
+    ${server_name}
+}
+
+create_servers_everyimage()
+{
+    for i in $(openstack image list -f value -c ID); do
+        nova  boot   --flavor flavor2 \
+        --security-group default \
+        --availability-zone nova \
+        --block-device id=$i,source=image,dest=volume,volume_type=os_type,bootindex=0,size=100,shutdown=remove \
+        --nic net-name=network \
+        --min-count 1 \
+        --key-name key \
+        --meta admin_pass=123 \
+        ${i:0:6}
+        openstack volume create --size 300 ${i:0:6}
+        sleep 5
+        openstack server add volume ${i:0:6} ${i:0:6}
+    done
+}
+# create 20 server, attach a volume and add floating ip for each
+create_servers
+servers=$(openstack server list --name ${server_name} -f value -c Name)
+for server in $servers
+do
+    openstack volume create --size 2000 $server
+    openstack server add volume $server $server
+    fip=`openstack floating ip create ext-net -f value -c "floating_ip_address"`
+    openstack server add floating ip $server $fip
+done
+
+# resize and rebuild
+to_flavor=flavor2
+to_image=2f8c90d4-aa09-492d-969e-bcaa4ecbf2e2
+for server in $servers
+do
+    openstack server resize --flavor $to_flavor  --wait $server
+    openstack server resize --confirm $server
+    nova rebuild --meta admin_pass=123@qaz  $server $to_image
+done
+
+# backup system volume
+for v in $(openstack volume list | grep "/dev/vda" | awk '{print $2,$11}')
+do
+    openstack volume backup create --force --name ${v#* } ${v% *}
+done

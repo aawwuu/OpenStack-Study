@@ -1,0 +1,62 @@
+#! /bin/bash
+
+# 虚拟机启动时，需要做如下检测：
+# qga启动
+# ip地址获取
+# 元数据获取 curl 169.254.169.254/openstack/latest/meta_data.json
+# cloud-init
+# acpid
+# NetworkManager
+
+# 利用qemu-ga检测虚拟机是否正确启动服务
+# virsh qemu-agent-command ${vm} '{"execute":"guest-info"}' | python -mjson.tool
+for v in $(cat vm.txt);do
+    host=${v#*":"}
+    host=${host//e/.}
+    vm=${v%":"*}
+
+    # check qemu-ga
+    qemu_ga=$(ssh root@${host} virsh qemu-agent-command ${vm} {'\"'execute'\"': '\"'guest-ping'\"'\})
+    [[ "${qemu_ga}x" == "x" ]] && printf "\033[31m ${vm} QEMU guest agent is inactive\n\033[0m" && continue
+
+    # check ip address
+    ssh root@${host} virsh qemu-agent-command ${vm} {'\"'execute'\"':'\"'guest-network-get-interfaces'\"'\} | \
+        python -mjson.tool | grep -B 1  "\"ip-address-type\": \"ipv4\"" | grep "\"ip-address\":" | grep -v "127.0.0.1" | column -t
+
+    # check hostname
+    pid=$(
+        ssh root@${host} "virsh qemu-agent-command ${vm} \
+        {'\"'execute'\"':'\"'guest-exec'\"', '\"'arguments'\"':'{''\"'path'\"':'\"'cat'\"','\"'arg'\"':['\"'/etc/hostname'\"'],'\"'capture-output'\"':true}}" | \
+        python -mjson.tool | grep pid | awk '{print $2}'
+        )
+    
+    hostname=$(
+        ssh root@${host} "virsh qemu-agent-command ${vm} \
+        {'\"'execute'\"':'\"'guest-exec-status'\"', '\"'arguments'\"':{'\"'pid'\"':'$pid'}}" | \
+        python -mjson.tool | grep out-data | awk '{print $2}'
+        )
+    hostname=$(printf ${hostname} | base64 -d)
+
+done
+
+
+#!/bin/bash
+
+topfunc()
+{
+        dom="centos7.0"
+        retpid=$(virsh qemu-agent-command --timeout 5  $dom '{"execute":"guest-exec", "arguments":{"path":"cat","arg":["/etc/hostname"],"capture-output":true}}' | python -mjson.tool | grep pid | awk '{print $2}')
+
+        retval=""
+        while [ -z $retval ]
+        do
+            retval=$(virsh qemu-agent-command --timeout 5  $dom '{"execute":"guest-exec-status","arguments":{"pid":'$retpid'}}' | python -mjson.tool | grep out-data | awk '{print $2}')
+        done
+        retval=$(echo $retval | sed 's/"//g')
+        echo $retval | base64 -d
+}
+
+topfunc
+
+windows:
+qga_cmd_get_cpu = ({"execute":"guest-exec", "arguments":{"path":"cmd","arg": ["/C","wmic","cpu","get", "loadpercentage","/value"], "capture-output":true}})

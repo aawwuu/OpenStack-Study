@@ -1,0 +1,47 @@
+# 创建公网
+1.使用命令行创建(213改成需要的vlan id）物理网络：external一般不需要改变
+openstack network create --external --provider-network-type  vlan --provider-physical-network external --provider-segment 213 ext-net
+
+2.sdk创建
+(openstacksdk)[root@192-168-30-210 network]# cat test_create_ext_network.py 
+# -*- coding: UTF-8 -*-
+from sdk_test.get_conn import conn
+
+args = {'name': 'ext-net', 'provider:network_type':'vlan',
+        'provider:physical_network':'external',
+        'provider:segmentation_id':213,
+        'router:external':True}
+ext_network = conn.network.create_network(**args)
+print ext_network
+
+
+#虚拟机的信息
+openstack catalog list  所有的服务endpoint
+nova instance-action-list <server>  列出虚拟机的所有操作
+nova instance-action <server> <request_id>	某个操作的具体返回信息
+nova interface-list <server> 虚拟机的网卡信息
+
+#主机聚合
+openstack aggregate create [--zone <availability-zone>] <name>
+openstack aggregate add host <aggregate> <host>
+openstack availability zone list
+openstack aggregate list
+
+openstack aggregate remove host <aggregate> <host>
+openstack aggregate delete <aggregate>
+
+#共享镜像
+openstack image set --public | private <image>
+openstack image set --project <project> <image>   	共享给指定项目
+openstack image unset --project <project> <image> 	取消共享
+
+#查看ceph卷备份（计算节点）
+rbd --id  cinder-backup --conf /etc/ceph/ceph.conf --pool backups ls | grep <volume_id>
+#镜像依赖
+rbd --id cinder --conf /etc/ceph/ceph.conf --pool images children 85e9fcfe-5929-4e37-ac83-40c721599aba@snap
+
+#浮动ip限速
+neutron floatingip-update-ratelimit <floating ip> <rate limit>
+
+#查询dhcp在那个物理节点
+neutron dhcp-agent-list-hosting-net <network>

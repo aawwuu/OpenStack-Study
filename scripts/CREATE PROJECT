@@ -1,0 +1,68 @@
+#! /bin/bash
+
+PROJECT_NAME=($project_name newtest)
+USER_NAME=($user_name newtest)
+USER_PASSWORD=($user_password newtest)
+
+AUTH_URL=http://172.18.211.101:10006/v3
+external_network=($ext_net ext-net)
+ADMIN_PASSWORD=ADMIN_PASS
+
+# source admin_openrc
+export OS_PROJECT_DOMAIN_NAME=default
+export OS_USER_DOMAIN_NAME=default
+export OS_PROJECT_NAME=admin
+export OS_USERNAME=admin
+export OS_PASSWORD=$ADMIN_PASSWORD
+export OS_AUTH_URL=$AUTH_URL
+export OS_IDENTITY_API_VERSION=3
+export OS_IMAGE_API_VERSION=2
+
+create_project()
+{
+	project_id=$(openstack project create -f value -c id $PROJECT_NAME)
+	user_id=$(openstack user create -f value -c id --project $PROJECT_NAME --password $USER_PASSWORD $USER_NAME)
+	openstack role add --user $user_id --project $PROJECT_NAME user
+}
+
+create_project
+echo "
++--------------+------------------------------------------+
+PROJECT_NAME   |  $PROJECT_NAME
+project_id     |  $project_id
+USER_NAME      |  $USER_NAME
+user_id        |  $user_id
++--------------+------------------------------------------+
+"
+
+export OS_PROJECT_NAME=$PROJECT_NAME
+export OS_USERNAME=$USER_NAME
+export OS_PASSWORD=$USER_PASSWORD
+
+create_network()
+{
+	# create router
+	router_id=$(openstack router create -f value -c id ${PROJECT_NAME}_router)
+	openstack router set --external-gateway $external_network $router_id
+
+	# create network
+	net_id=$(openstack network create -f value -c id ${PROJECT_NAME}_net)
+	subnet_id=$(openstack subnet create --subnet-range 10.10.10.0/24 --network $net_id \
+				--dns-nameserver 114.114.114.114 -f value -c id ${PROJECT_NAME}_subnet)
+	openstack router add subnet $router_id $subnet_id
+
+	# create a new secgroup and rule ssh
+	newsecgroup=$(openstack security group create -f value -c id ${PROJECT_NAME}_newsecgroup)
+	rule_ssh=$(openstack security group rule create --dst-port 22 --protocol tcp --ingress \
+	-f value -c id $newsecgroup)
+}
+
+create_network
+
+create_keypair()
+{
+	echo "keypair file : key1.private"
+	openstack keypair create key1 2>&1 | tee key1.private
+}
+
+create_keypair

@@ -1,0 +1,12 @@
+# 上传镜像
+glance image-create \
+ --name "CentOS6.8" \
+ --file /data/centos68.dsk \
+ --disk-format raw \
+ --container-format bare  \
+ --visibility public \
+ --property hw_qemu_guest_agent=yes  \
+ --property os_type="linux" \
+ --property hw_vif_multiqueue_enabled=true \
+ --property hw_vif_model=e1000 \
+ --progress

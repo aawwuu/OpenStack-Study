@@ -1,0 +1,88 @@
+#! /bin/bash
+
+#DELETE PROJECT
+
+PROJECT_ID=($project_id $1)
+
+# source admin-openrc
+
+delete_instances()
+{
+	# nova delete $(openstack server list --project $PROJECT_ID -c ID -f value)
+	instances=$(openstack server list --project $PROJECT_ID -c ID -f value)
+	for i in $instances
+	do
+		openstack server delete $i
+	done
+}
+delete_instances
+
+delete_volumes()
+{
+	volumes=$(openstack volume list --project $PROJECT_ID -c ID -f value)
+	for  v in $volumes
+	do
+		backups=`openstack volume backup list --volume $v`
+		for i in $backups
+		do
+			openstack volume backup delete $i
+		done
+		openstack volume delete $v
+	done
+}
+delete_volumes
+
+delete_images()
+{
+	images=$(openstack image list --property owner=$project_id -c ID -f value)
+	for i in $images
+	do
+		openstack image delete $i
+	done
+}
+delete_images
+
+delete_neworks()
+{
+	#delete floating ip
+	fips=$(openstack floating ip list --project $PROJECT_ID -c ID -f value)
+	for i in $fips
+	do
+		openstack floating ip delete $i
+	done
+
+	# router remove subnet
+	router_id=$(openstack router list -f value -c ID --project $PROJECT_ID)
+	router_ports=$(openstack port list --device-owner network:router_interface_distributed \
+		-f value -c ID --project $PROJECT_ID)
+
+	for port in $router_ports
+	do
+		openstack router remove port $router_id $port
+	done
+
+	# router clear gateway
+	openstack router unset --external-gateway $router_id
+
+	# delete network
+	networks=$(openstack network list --internal --project $PROJECT_ID -f value -c ID)
+	for net in $networks
+	do
+		openstack network delete $net
+	done
+
+	# delete router
+	openstack router delete $router_id
+}
+delete_nework
+
+delete_user_and_project()
+{
+	users=$(openstack user list --project $PROJECT_ID -f value -c ID)
+	for u in $users
+	do
+		openstack user delete $u
+	done
+	openstack project delete $PROJECT_ID
+}
+delete_user_and_project
