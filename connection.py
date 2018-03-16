@@ -1,4 +1,7 @@
 #!/usr/bin/python
+
+# http://git.openstack.org/cgit/openstack/python-openstacksdk/tree/openstack/connection.py
+
 from openstack import connection
 
 auth_args = {
