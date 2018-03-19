@@ -20,6 +20,7 @@ nova 命令位于 `/usr/bin/nova`
 
 ```python
 # cat /usr/bin/nova
+
 #!/usr/bin/python2
 # PBR Generated from u'console_scripts'
 
@@ -258,7 +259,7 @@ class OpenStackComputeShell(object):
 args.func: <function do_list at 0x2f9db90>
 ```
 
-`novaclient/v2/shell.py`
+找到 `novaclient/v2/shell.py`
 
 ```python
 def do_list(cs, args):
@@ -381,5 +382,203 @@ def do_list(cs, args):
         sortby_index = None
     utils.print_list(servers, columns,
                      formatters, sortby_index=sortby_index)
+```
+
+可以看到
+
+```python
+servers = cs.servers.list(detailed=detailed,
+                          search_opts=search_opts,
+                          sort_keys=sort_keys,
+                          sort_dirs=sort_dirs,
+                          marker=args.marker,
+```
+
+其中 cs 在 `novaclient/shell.py` 的`OpenStackComputeShell`中定义：
+
+```python
+ self.cs = client.Client(
+     api_versions.APIVersion("2.0"),
+     os_username, os_password, project_id=os_project_id,
+     project_name=os_project_name, user_id=os_user_id,
+     auth_url=os_auth_url, insecure=insecure,
+     region_name=os_region_name, endpoint_type=endpoint_type,
+     extensions=self.extensions, service_type=service_type,
+     service_name=service_name, auth_token=auth_token,
+     timings=args.timings, endpoint_override=endpoint_override,
+     os_cache=os_cache, http_log_debug=args.debug,
+     cacert=cacert, cert=cert, timeout=timeout,
+     session=keystone_session, auth=keystone_auth,
+     logger=self.client_logger,
+     project_domain_id=os_project_domain_id,
+     project_domain_name=os_project_domain_name,
+     user_domain_id=os_user_domain_id,
+     user_domain_name=os_user_domain_name,
+     **additional_kwargs)
+```
+
+到 `novaclient/v2/client.py`看 Client 的定义：
+
+```python
+class Client(object):
+    """Top-level object to access the OpenStack Compute API.
+
+    .. warning:: All scripts and projects should not initialize this class
+      directly. It should be done via `novaclient.client.Client` interface.
+    """
+    ...
+            self.servers = servers.ServerManager(self)
+    ...
+```
+
+找到`novaclient/v2/servers.py`
+
+```python
+class ServerManager(base.BootingManagerWithFind):
+    resource_class = Server
+...
+    def list(self, detailed=True, search_opts=None, marker=None, limit=None,
+             sort_keys=None, sort_dirs=None):
+        """
+        Get a list of servers.
+
+        :param detailed: Whether to return detailed server info (optional).
+        :param search_opts: Search options to filter out servers which don't
+            match the search_opts (optional). The search opts format is a
+            dictionary of key / value pairs that will be appended to the query
+            string.  For a complete list of keys see:
+            https://developer.openstack.org/api-ref/compute/#list-servers
+        :param marker: Begin returning servers that appear later in the server
+                       list than that represented by this server id (optional).
+        :param limit: Maximum number of servers to return (optional).
+        :param sort_keys: List of sort keys
+        :param sort_dirs: List of sort directions
+
+        :rtype: list of :class:`Server`
+
+        Examples:
+
+        client.servers.list() - returns detailed list of servers
+
+        client.servers.list(search_opts={'status': 'ERROR'}) -
+        returns list of servers in error state.
+
+        client.servers.list(limit=10) - returns only 10 servers
+
+        """
+        if search_opts is None:
+            search_opts = {}
+
+        qparams = {}
+
+        for opt, val in search_opts.items():
+            if val:
+                if isinstance(val, six.text_type):
+                    val = val.encode('utf-8')
+                qparams[opt] = val
+
+        detail = ""
+        if detailed:
+            detail = "/detail"
+
+        result = base.ListWithMeta([], None)
+        while True:
+            if marker:
+                qparams['marker'] = marker
+
+            if limit and limit != -1:
+                qparams['limit'] = limit
+
+            # Transform the dict to a sequence of two-element tuples in fixed
+            # order, then the encoded string will be consistent in Python 2&3.
+            if qparams or sort_keys or sort_dirs:
+                # sort keys and directions are unique since the same parameter
+                # key is repeated for each associated value
+                # (ie, &sort_key=key1&sort_key=key2&sort_key=key3)
+                items = list(qparams.items())
+                if sort_keys:
+                    items.extend(('sort_key', sort_key)
+                                 for sort_key in sort_keys)
+                if sort_dirs:
+                    items.extend(('sort_dir', sort_dir)
+                                 for sort_dir in sort_dirs)
+                new_qparams = sorted(items, key=lambda x: x[0])
+                query_string = "?%s" % parse.urlencode(new_qparams)
+            else:
+                query_string = ""
+
+            servers = self._list("/servers%s%s" % (detail, query_string),
+                                 "servers")
+            result.extend(servers)
+            result.append_request_ids(servers.request_ids)
+
+            if limit and limit != -1:
+                limit = max(limit - len(servers), 0)
+
+            if not servers or limit == 0:
+                break
+            marker = result[-1].id
+        return result
+...
+```
+
+找到调用接口
+
+```python
+result = base.ListWithMeta([], None)
+servers = self._list("/servers%s%s" % (detail, query_string),
+                                 "servers")
+result.extend(servers)
+```
+
+位于 `novaclient/base.py`
+
+```python
+class Manager(HookableMixin):
+    """Manager for API service.
+
+    Managers interact with a particular type of API (servers, flavors, images,
+    etc.) and provide CRUD operations for them.
+    """
+    resource_class = None
+    cache_lock = threading.RLock()
+
+    def __init__(self, api):
+        self.api = api
+
+    @property
+    def client(self):
+        return self.api.client
+
+    @property
+    def api_version(self):
+        return self.api.api_version
+
+    def _list(self, url, response_key, obj_class=None, body=None,
+              filters=None):
+        if filters:
+            url = utils.get_url_with_filter(url, filters)
+        if body:
+            resp, body = self.api.client.post(url, body=body)
+        else:
+            resp, body = self.api.client.get(url)
+
+        if obj_class is None:
+            obj_class = self.resource_class
+
+        data = body[response_key]
+        # NOTE(ja): keystone returns values as list as {'values': [ ... ]}
+        #           unlike other services which just return the list...
+        if isinstance(data, dict):
+            try:
+                data = data['values']
+            except KeyError:
+                pass
+
+        with self.completion_cache('human_id', obj_class, mode="w"):
+            with self.completion_cache('uuid', obj_class, mode="w"):
+                items = [obj_class(self, res, loaded=True)
+                         for res in data if res]
+                return ListWithMeta(items, resp)
 ```
 
