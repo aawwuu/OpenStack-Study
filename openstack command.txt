@@ -1,3 +1,8 @@
+# openstack 命令
+add/remove
+set/unset
+create/delete
+
 # 创建公网
 1.使用命令行创建(213改成需要的vlan id）物理网络：external一般不需要改变
 openstack network create --external --provider-network-type  vlan --provider-physical-network external --provider-segment 213 ext-net
@@ -14,12 +19,20 @@ args = {'name': 'ext-net', 'provider:network_type':'vlan',
 ext_network = conn.network.create_network(**args)
 print ext_network
 
+# 集群状态
+openstack compute service list
+openstack volume service list
+openstack network agent list
 
 #虚拟机的信息
 openstack catalog list  所有的服务endpoint
 nova instance-action-list <server>  列出虚拟机的所有操作
-nova instance-action <server> <request_id>	某个操作的具体返回信息
+nova instance-action <server> <request_id>  某个操作的具体返回信息
 nova interface-list <server> 虚拟机的网卡信息
+
+# 绑定浮动ip
+openstack server add floating ip <server> <floating ip>
+openstack floating ip set --port <port> <floating ip>
 
 #主机聚合
 openstack aggregate create [--zone <availability-zone>] <name>
