@@ -436,7 +436,7 @@ class Client(object):
 ```python
 class ServerManager(base.BootingManagerWithFind):
     resource_class = Server
-...
+	......
     def list(self, detailed=True, search_opts=None, marker=None, limit=None,
              sort_keys=None, sort_dirs=None):
         """
@@ -525,39 +525,16 @@ class ServerManager(base.BootingManagerWithFind):
 找到调用接口
 
 ```python
-result = base.ListWithMeta([], None)
 servers = self._list("/servers%s%s" % (detail, query_string),
                                  "servers")
-result.extend(servers)
 ```
 
 位于 `novaclient/base.py`
 
 ```python
 class Manager(HookableMixin):
-    """Manager for API service.
-
-    Managers interact with a particular type of API (servers, flavors, images,
-    etc.) and provide CRUD operations for them.
-    """
-    resource_class = None
-    cache_lock = threading.RLock()
-
-    def __init__(self, api):
-        self.api = api
-
-    @property
-    def client(self):
-        return self.api.client
-
-    @property
-    def api_version(self):
-        return self.api.api_version
-
-    def _list(self, url, response_key, obj_class=None, body=None,
-              filters=None):
-        if filters:
-            url = utils.get_url_with_filter(url, filters)
+    ……
+    def _list(self, url, response_key, obj_class=None, body=None):
         if body:
             resp, body = self.api.client.post(url, body=body)
         else:
@@ -581,4 +558,14 @@ class Manager(HookableMixin):
                          for res in data if res]
                 return ListWithMeta(items, resp)
 ```
+
+根据上面`list`  对  `_list` 的调用，可知 `url = '/servers/detail'`  ,  `body = None`
+
+因此会执行
+
+```python
+resp, body = self.api.client.get(url)
+```
+
+
 
