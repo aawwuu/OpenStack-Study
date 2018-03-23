@@ -8,15 +8,15 @@ server_name=new_server
 create_servers()
 {
     nova boot \
-    --flavor flavor1 \
-    --security-group default \
-    --availability-zone nova \
+    --flavor $flavor \
+    --security-group $security-group \
+    --availability-zone $zone \
     --nic net-id=$net \
-    --block-device id=$image,source=image,dest=volume,volume_type=SSD,bootindex=0,size=100,shutdown=remove \
+    --block-device id=$image,source=image,dest=volume,volume_type=$volume_type,bootindex=0,size=$size,shutdown=remove \
     --min-count $count \
-    --meta vif_model=e1000 \
-    --meta admin_pass=123@qwe \
-    ${server_name}
+    --meta vif_model=$vif_model \
+    --meta admin_pass=$password \
+    $server_name
 }
 
 create_servers_everyimage()
