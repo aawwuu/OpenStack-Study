@@ -797,7 +797,7 @@ class Manager(HookableMixin):
 resp, body = self.api.client.get(url)
 ```
 
-直接打印一下`self.api.client`  这个对象
+直接打印，看一下 `self.api.client`  这个对象
 
 ```python
 self.api:
@@ -886,5 +886,68 @@ def _construct_http_client(api_version=None,
                          timings=timings,
                          user_agent=user_agent,
                          **kwargs)
+```
+
+上面已经有 `session=keystone_session, auth=keystone_auth`  ，最后调用了 `SessionClient`
+
+```
+class SessionClient(adapter.LegacyJsonAdapter):
+
+    client_name = 'python-novaclient'
+    client_version = novaclient.__version__
+
+    def __init__(self, *args, **kwargs):
+        self.times = []
+        self.timings = kwargs.pop('timings', False)
+        self.api_version = kwargs.pop('api_version', None)
+        self.api_version = self.api_version or api_versions.APIVersion()
+        super(SessionClient, self).__init__(*args, **kwargs)
+
+    def request(self, url, method, **kwargs):
+        kwargs.setdefault('headers', kwargs.get('headers', {}))
+        api_versions.update_headers(kwargs["headers"], self.api_version)
+
+        # NOTE(dbelova): osprofiler_web.get_trace_id_headers does not add any
+        # headers in case if osprofiler is not initialized.
+        if osprofiler_web:
+            kwargs['headers'].update(osprofiler_web.get_trace_id_headers())
+
+        # NOTE(jamielennox): The standard call raises errors from
+        # keystoneauth1, where we need to raise the novaclient errors.
+        raise_exc = kwargs.pop('raise_exc', True)
+        with utils.record_time(self.times, self.timings, method, url):
+            resp, body = super(SessionClient, self).request(url,
+                                                            method,
+                                                            raise_exc=False,
+                                                            **kwargs)
+
+        # TODO(andreykurilin): uncomment this line, when we will be able to
+        #   check only nova-related calls
+        # api_versions.check_headers(resp, self.api_version)
+        if raise_exc and resp.status_code >= 400:
+            raise exceptions.from_response(resp, body, url, method)
+
+        return resp, body
+
+    def get_timings(self):
+        return self.times
+
+    def reset_timings(self):
+        self.times = []
+
+    @property
+    def management_url(self):
+        self.logger.warning(
+            _("Property `management_url` is deprecated for SessionClient. "
+              "Use `endpoint_override` instead."))
+        return self.endpoint_override
+
+    @management_url.setter
+    def management_url(self, value):
+        self.logger.warning(
+            _("Property `management_url` is deprecated for SessionClient. "
+              "It should be set via `endpoint_override` variable while class"
+              " initialization."))
+        self.endpoint_override = value
 ```
 
