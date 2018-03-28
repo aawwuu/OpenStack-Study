@@ -34,9 +34,11 @@ def get_host_state(host_type):
     cpu_fields = ['主机', 'CPU负载', '最大值', '最小值', '平均值']
     mem_fields = ["主机", "总内存(G)", "内存使用(G)", "内存使用率","内存最大使用(G)",
         "内存最大使用率", "内存最小使用(G)", "内存最小使用率", "内存平均使用(G)", "内存平均使用率"]
+
     with open('report/%s.csv'%date, 'a+') as f:
         w = csv.writer(f)
         w.writerow(["{0}".format(host_type)])
+        w.writerow(["CPU使用情况"])
         w.writerow(cpu_fields)
         for host in host_list:
             items = zabbix.get_items(token, hosts[host])
@@ -52,6 +54,7 @@ def get_host_state(host_type):
         print("Complete {0} CPU resource".format(host_type))
 
         w.writerow([" "])
+        w.writerow(["内存使用情况"])
         w.writerow(mem_fields)
         for host in host_list:
             items = zabbix.get_items(token, hosts[host])
@@ -75,17 +78,98 @@ def get_host_state(host_type):
         w.writerow([" "])
         print("Complete {0} memory resource".format(host_type))
 
-def main():
-    print("该程序运行时间较长，请耐心等待")
+
+def get_nic_data(host_type):
+
+    groupid = host_group[host_type]
+    hosts = zabbix.get_hosts(token, groupid)
+    host_list = hosts.keys()
+    host_list.sort()
+    
+    nic_fields = ['nic', 'in_max', 'in_min', 'in_avg', 'out_max', 'out_min', 'out_avg']
+
+    if host_type == 'Compute node':
+        nics = ['enp7s0f0.1224', 'enp7s0f0.3303', 'enp130s0f0', 'enp130s0f1', 'enp2s0f0.1221']
+    elif host_type == 'Ceph':
+        nics = ['enp5s0f0', 'enp7s0f0.3302', 'enp2s0f0.1221']
+    elif host_type == 'Controller node':
+        nics = ['eth0', 'eth1', 'eth2']
+
     with open('report/%s.csv'%date, 'a+') as f:
         w = csv.writer(f)
-        w.writerow(["vm resource"])
-        w.writerows(NovaSQL.nova_sql())
+        w.writerow(nic_fields)
 
-    get_host_state('Compute node')
-    get_host_state('Controller node')
+        for host in host_list:
+            w.writerow(["{0}".format(host)])
+            items = zabbix.get_items(token, hosts[host])
+
+
+
+            for nic in nics:
+
+                if not 'net.if.in[%s]'%nic in items.keys():
+                    continue
+                in_itemid = items['net.if.in[%s]' %nic]
+                out_itemid = items['net.if.out[%s]' %nic]
+                #packets_in_itemid = items['net.if.out[%s,packets]' %nic]
+                #packets_out_itemid = items['net.if.out[%s,packets]' %nic]
+                #speed_itemid = items['net.speed.get[%s]' %nic]
+
+                in_data = zabbix.get_history_data(token, in_itemid, time_from, limit=None)
+                out_data = zabbix.get_history_data(token, out_itemid, time_from, limit=None)
+                #packets_in_data = zabbix.get_history_data(token, packets_in_itemid, time_from, limit=None)
+                #packets_out_data = zabbix.get_history_data(token, packets_out_itemid, time_from, limit=None)
+                #speed_data = zabbix.get_history_data(token, speed_itemid, time_from, limit=None)
+
+                in_values = map(lambda x : round(x / 1024, 2), in_data.values())
+                in_max = max(in_values)
+                in_min = min(in_values)
+                in_avg = sum(in_values) / len(in_values)
+
+                out_values = map(lambda x : round(x / 1024, 2), out_data.values())
+                out_max = max(out_values) 
+                out_min = min(out_values) 
+                out_avg = sum(out_values) / len(out_values)
+                """
+                packets_in_values = map(lambda x : round(x / 1024, 2), packets_in_data.values())
+                packets_in_max = max(packets_in_values)
+                packets_in_min = min(packets_in_values)
+                packets_in_avg = sum(packets_in_values) / len(packets_in_values)
+
+                packets_out_values = map(lambda x : round(x / 1024, 2), packets_out_data.values())
+                packets_out_max = max(packets_out_values)
+                packets_out_min = min(packets_out_values)
+                packets_out_avg = sum(packets_out_values) / len(packets_out_values)
+
+                speed_values = map(lambda x : round(x / 1024, 2), speed_data.values())
+                speed_max = max(speed_values)
+                speed_min = min(speed_values)
+                speed_avg = sum(speed_values) / len(speed_values)
+                """
+                nic_row = [nic, in_max, in_min, in_avg, out_max, out_min, out_avg]
+                w.writerow(nic_row)
+                print("Complete", host, nic)
+            w.writerow([" "])
+            print("Complete {0} network traffic data".format(host))
+
+def main():
+    '''
+    print("本程序运行时间较长，请耐心等待")
+    with open('report/%s.csv'%date, 'a+') as f:
+        w = csv.writer(f)
+        w.writerow(["虚拟机资源使用情况"])
+        w.writerows(NovaSQL.nova_sql())
+        w.writerow([" "])
+    '''
+    #get_host_state('Compute node')
+    #get_host_state('Controller node')
+
     get_host_state('Ceph')
+    
+    #get_nic_data('Controller node')
     print("Complete!!!!!!!!!!!!!!!!!!!!")
+    print("Check the report: report/%s.csv"%date)
+
 
 if __name__ == '__main__':
     main()
