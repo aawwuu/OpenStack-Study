@@ -10,3 +10,6 @@ glance image-create \
  --property hw_vif_multiqueue_enabled=true \
  --property hw_vif_model=e1000 \
  --progress
+
+ironic集群上传镜像
+openstack image create "CentOS7.2-baremetal" --file CentOS7.2-baremetal.dsk --disk-forma raw --container-format bare --property img_hv_type=qemu  --property os_type="linux"  --public
