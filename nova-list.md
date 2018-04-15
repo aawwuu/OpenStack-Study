@@ -821,76 +821,17 @@ self.client = client._construct_http_client（
 
 ```python
 def _construct_http_client(api_version=None,
-                           auth=None,
-                           auth_token=None,
-                           auth_url=None,
-                           cacert=None,
-                           cert=None,
-                           endpoint_override=None,
-                           endpoint_type='publicURL',
-                           http_log_debug=False,
-                           insecure=False,
-                           logger=None,
-                           os_cache=False,
-                           password=None,
-                           project_domain_id=None,
-                           project_domain_name=None,
-                           project_id=None,
-                           project_name=None,
-                           region_name=None,
-                           service_name=None,
-                           service_type='compute',
-                           session=None,
-                           timeout=None,
-                           timings=False,
-                           user_agent='python-novaclient',
-                           user_domain_id=None,
-                           user_domain_name=None,
-                           user_id=None,
-                           username=None,
+                           ……
                            **kwargs):
-    if not session:
-        if not auth and auth_token:
-            auth = identity.Token(auth_url=auth_url,
-                                  token=auth_token,
-                                  project_id=project_id,
-                                  project_name=project_name,
-                                  project_domain_id=project_domain_id,
-                                  project_domain_name=project_domain_name)
-        elif not auth:
-            auth = identity.Password(username=username,
-                                     user_id=user_id,
-                                     password=password,
-                                     project_id=project_id,
-                                     project_name=project_name,
-                                     auth_url=auth_url,
-                                     project_domain_id=project_domain_id,
-                                     project_domain_name=project_domain_name,
-                                     user_domain_id=user_domain_id,
-                                     user_domain_name=user_domain_name)
-        session = ksession.Session(auth=auth,
-                                   verify=(cacert or not insecure),
-                                   timeout=timeout,
-                                   cert=cert,
-                                   user_agent=user_agent)
-
+    ……
     return SessionClient(api_version=api_version,
-                         auth=auth,
-                         endpoint_override=endpoint_override,
-                         interface=endpoint_type,
-                         logger=logger,
-                         region_name=region_name,
-                         service_name=service_name,
-                         service_type=service_type,
-                         session=session,
-                         timings=timings,
-                         user_agent=user_agent,
+                         ……
                          **kwargs)
 ```
 
-上面已经有 `session=keystone_session, auth=keystone_auth`  ，最后调用了 `SessionClient`
+可见就是 `SessionClient`
 
-```
+```python
 class SessionClient(adapter.LegacyJsonAdapter):
 
     client_name = 'python-novaclient'
@@ -949,5 +890,434 @@ class SessionClient(adapter.LegacyJsonAdapter):
               "It should be set via `endpoint_override` variable while class"
               " initialization."))
         self.endpoint_override = value
+```
+
+因为
+
+```python
+class SessionClient(adapter.LegacyJsonAdapter):
+	……
+    def request(self, url, method, **kwargs):
+		……
+        with utils.record_time(self.times, self.timings, method, url):
+            resp, body = super(SessionClient, self).request(url,
+                                                            method,
+                                                            raise_exc=False,
+                                                            **kwargs)
+```
+
+所以看父类 
+
+`keystoneauth1/adapter.py`
+
+```python
+class LegacyJsonAdapter(Adapter):
+    """Make something that looks like an old HTTPClient.
+
+    A common case when using an adapter is that we want an interface similar to
+    the HTTPClients of old which returned the body as JSON as well.
+
+    You probably don't want this if you are starting from scratch.
+    """
+
+    def request(self, *args, **kwargs):
+        headers = kwargs.setdefault('headers', {})
+        headers.setdefault('Accept', 'application/json')
+
+        try:
+            kwargs['json'] = kwargs.pop('body')
+        except KeyError:
+            pass
+
+        resp = super(LegacyJsonAdapter, self).request(*args, **kwargs)
+
+        try:
+            body = resp.json()
+        except ValueError:
+            body = None
+
+        return resp, body
+
+```
+
+上面说到要执行`resp, body = self.api.client.get(url)`
+
+所以找到 get 方法，get 调用了 `self.request(url, 'GET', **kwargs)`
+
+`keystoneauth1/adapter.py`
+
+```python
+
+class Adapter(object):
+    """An instance of a session with local variables.
+    ……
+    """
+	def request(self, url, method, **kwargs):
+        ……
+        return self.session.request(url, method, **kwargs)
+    
+    def get(self, url, **kwargs):
+        return self.request(url, 'GET', **kwargs)
+```
+
+`request`调用的是`self.session.request(url, method, **kwargs)`
+
+接着看 session
+
+`keystoneautth1/session.py`
+
+```python
+class Session(object):
+    """Maintains client communication state and common functionality.
+
+    As much as possible the parameters to this class reflect and are passed
+    directly to the :mod:`requests` library.
+    ……
+    """
+    def request(self, url, method, json=None, original_ip=None,
+                user_agent=None, redirect=None, authenticated=None,
+                endpoint_filter=None, auth=None, requests_auth=None,
+                raise_exc=True, allow_reauth=True, log=True,
+                endpoint_override=None, connect_retries=0, logger=_logger,
+                allow={}, client_name=None, client_version=None,
+                microversion=None, microversion_service_type=None,
+                **kwargs):
+        """Send an HTTP request with the specified characteristics.
+        ……
+        :returns: The response to the request.
+        """
+        headers = kwargs.setdefault('headers', dict())
+        if microversion:
+            self._set_microversion_headers(
+                headers, microversion, microversion_service_type,
+                endpoint_filter)
+
+        if authenticated is None:
+            authenticated = bool(auth or self.auth)
+
+        if authenticated:
+            auth_headers = self.get_auth_headers(auth)
+
+            if auth_headers is None:
+                msg = 'No valid authentication is available'
+                raise exceptions.AuthorizationFailure(msg)
+
+            headers.update(auth_headers)
+
+        if osprofiler_web:
+            headers.update(osprofiler_web.get_trace_id_headers())
+
+        # if we are passed a fully qualified URL and an endpoint_filter we
+        # should ignore the filter. This will make it easier for clients who
+        # want to overrule the default endpoint_filter data added to all client
+        # requests. We check fully qualified here by the presence of a host.
+        if not urllib.parse.urlparse(url).netloc:
+            base_url = None
+
+            if endpoint_override:
+                base_url = endpoint_override % _StringFormatter(self, auth)
+            elif endpoint_filter:
+                base_url = self.get_endpoint(auth, allow=allow,
+                                             **endpoint_filter)
+
+            if not base_url:
+                raise exceptions.EndpointNotFound()
+
+            url = '%s/%s' % (base_url.rstrip('/'), url.lstrip('/'))
+
+        if self.cert:
+            kwargs.setdefault('cert', self.cert)
+
+        if self.timeout is not None:
+            kwargs.setdefault('timeout', self.timeout)
+
+        if user_agent:
+            headers['User-Agent'] = user_agent
+        elif self.user_agent:
+            user_agent = headers.setdefault('User-Agent', self.user_agent)
+        else:
+            # Per RFC 7231 Section 5.5.3, identifiers in a user-agent should be
+            # ordered by decreasing significance.  If a user sets their product
+            # that value will be used. Otherwise we attempt to derive a useful
+            # product value. The value will be prepended it to the KSA version,
+            # requests version, and then the Python version.
+
+            agent = []
+
+            if self.app_name and self.app_version:
+                agent.append('%s/%s' % (self.app_name, self.app_version))
+            elif self.app_name:
+                agent.append(self.app_name)
+
+            for additional in self.additional_user_agent:
+                agent.append('%s/%s' % additional)
+
+            if client_name and client_version:
+                agent.append('%s/%s' % (client_name, client_version))
+            elif client_name:
+                agent.append(client_name)
+
+            if not agent:
+                # NOTE(jamielennox): determine_user_agent will return an empty
+                # string on failure so checking for None will ensure it is only
+                # called once even on failure.
+                if self._determined_user_agent is None:
+                    self._determined_user_agent = _determine_user_agent()
+
+                if self._determined_user_agent:
+                    agent.append(self._determined_user_agent)
+
+            agent.append(DEFAULT_USER_AGENT)
+            user_agent = headers.setdefault('User-Agent', ' '.join(agent))
+
+        if self.original_ip:
+            headers.setdefault('Forwarded',
+                               'for=%s;by=%s' % (self.original_ip, user_agent))
+
+        if json is not None:
+            headers.setdefault('Content-Type', 'application/json')
+            kwargs['data'] = self._json.encode(json)
+
+        for k, v in self.additional_headers.items():
+            headers.setdefault(k, v)
+
+        kwargs.setdefault('verify', self.verify)
+
+        if requests_auth:
+            kwargs['auth'] = requests_auth
+
+        # Query parameters that are included in the url string will
+        # be logged properly, but those sent in the `params` parameter
+        # (which the requests library handles) need to be explicitly
+        # picked out so they can be included in the URL that gets loggged.
+        query_params = kwargs.get('params', dict())
+
+        if log:
+            self._http_log_request(url, method=method,
+                                   data=kwargs.get('data'),
+                                   headers=headers,
+                                   query_params=query_params,
+                                   logger=logger)
+
+        # Force disable requests redirect handling. We will manage this below.
+        kwargs['allow_redirects'] = False
+
+        if redirect is None:
+            redirect = self.redirect
+
+        send = functools.partial(self._send_request,
+                                 url, method, redirect, log, logger,
+                                 connect_retries)
+
+        try:
+            connection_params = self.get_auth_connection_params(auth=auth)
+        except exceptions.MissingAuthPlugin:
+            # NOTE(jamielennox): If we've gotten this far without an auth
+            # plugin then we should be happy with allowing no additional
+            # connection params. This will be the typical case for plugins
+            # anyway.
+            pass
+        else:
+            if connection_params:
+                kwargs.update(connection_params)
+
+        resp = send(**kwargs)
+
+        # log callee and caller request-id for each api call
+        if log:
+            # service_name should be fetched from endpoint_filter if it is not
+            # present then use service_type as service_name.
+            service_name = None
+            if endpoint_filter:
+                service_name = endpoint_filter.get('service_name')
+                if not service_name:
+                    service_name = endpoint_filter.get('service_type')
+
+            # Nova uses 'x-compute-request-id' and other services like
+            # Glance, Cinder etc are using 'x-openstack-request-id' to store
+            # request-id in the header
+            request_id = (resp.headers.get('x-openstack-request-id') or
+                          resp.headers.get('x-compute-request-id'))
+            if request_id:
+                logger.debug('%(method)s call to %(service_name)s for '
+                             '%(url)s used request id '
+                             '%(response_request_id)s',
+                             {'method': resp.request.method,
+                              'service_name': service_name,
+                              'url': resp.url,
+                              'response_request_id': request_id})
+
+        # handle getting a 401 Unauthorized response by invalidating the plugin
+        # and then retrying the request. This is only tried once.
+        if resp.status_code == 401 and authenticated and allow_reauth:
+            if self.invalidate(auth):
+                auth_headers = self.get_auth_headers(auth)
+
+                if auth_headers is not None:
+                    headers.update(auth_headers)
+                    resp = send(**kwargs)
+
+        if raise_exc and resp.status_code >= 400:
+            logger.debug('Request returned failure status: %s',
+                         resp.status_code)
+            raise exceptions.from_response(resp, method, url)
+
+        return resp
+```
+
+看到这一段
+
+```python
+        if authenticated is None:
+            authenticated = bool(auth or self.auth)
+
+        if authenticated:
+            auth_headers = self.get_auth_headers(auth)
+
+            if auth_headers is None:
+                msg = 'No valid authentication is available'
+                raise exceptions.AuthorizationFailure(msg)
+
+            headers.update(auth_headers)
+```
+
+打印`auth_headers`
+
+```
+{'X-Auth-Token': 'gAAAAABat2oxbu6IZkOBAnHCZkcaqLoerNfw4P7SjstWSzSy4RCMjvkpkaaMGDDUMo5ndDEec8L6LNTmBSEsCePcAuajTRp3EpHJFiExFegk-HCgFqI1NiY3xqojATJh292n0yPamjG8_PaZpmbbH_T0xaoEb0OaXwUrwyxobLknho2ojAW7AHU'}
+```
+
+`auth_headers = self.get_auth_headers(auth)`   这一行就是在获取 token
+
+找到 `get_auth_headers`
+
+```python
+    def _auth_required(self, auth, msg):
+        if not auth:
+            auth = self.auth
+
+        if not auth:
+            msg_fmt = 'An auth plugin is required to %s'
+            raise exceptions.MissingAuthPlugin(msg_fmt % msg)
+
+        return auth
+    def get_auth_headers(self, auth=None, **kwargs):
+        """Return auth headers as provided by the auth plugin.
+
+        :param auth: The auth plugin to use for token. Overrides the plugin
+                     on the session. (optional)
+        :type auth: keystoneauth1.plugin.BaseAuthPlugin
+
+        :raises keystoneauth1.exceptions.auth.AuthorizationFailure:
+            if a new token fetch fails.
+        :raises keystoneauth1.exceptions.auth_plugins.MissingAuthPlugin:
+            if a plugin is not available.
+
+        :returns: Authentication headers or None for failure.
+        :rtype: :class:`dict`
+        """
+        auth = self._auth_required(auth, 'fetch a token')
+        return auth.get_headers(self, **kwargs)
+    
+```
+
+打印一下 auth，得到
+
+```
+<keystoneauth1.identity.generic.password.Password object at 0x34bf8d0>
+```
+
+继续看，执行 `auth.get_headers(self, **kwargs)`
+
+`keystoneauth1/identity/generic/password.py`
+
+```python
+class Password(base.BaseGenericPlugin):
+	……
+```
+
+并没有 `get_headers` 方法，因此去他的父类找
+
+`keystoneauth1/identity/generic/base.py:BaseGenericPlugin(base.BaseIdentityPlugin)`
+
+`keystoneauth1/identity/base.py:BaseIdentityPlugin(plugin.BaseAuthPlugin)`
+
+最后找到 `keystoneauth1/plugin.py`
+
+```python
+class BaseAuthPlugin(object):
+    """The basic structure of an authentication plugin.
+
+    .. note::
+        See :doc:`/authentication-plugins` for a description of plugins
+        provided by this library.
+
+    """
+    def get_headers(self, session, **kwargs):
+        """Fetch authentication headers for message.
+
+        This is a more generalized replacement of the older get_token to allow
+        plugins to specify different or additional authentication headers to
+        the OpenStack standard 'X-Auth-Token' header.
+
+        How the authentication headers are obtained is up to the plugin. If the
+        headers are still valid they may be re-used, retrieved from cache or
+        the plugin may invoke an authentication request against a server.
+
+        The default implementation of get_headers calls the `get_token` method
+        to enable older style plugins to continue functioning unchanged.
+        Subclasses should feel free to completely override this function to
+        provide the headers that they want.
+
+        There are no required kwargs. They are passed directly to the auth
+        plugin and they are implementation specific.
+
+        Returning None will indicate that no token was able to be retrieved and
+        that authorization was a failure. Adding no authentication data can be
+        achieved by returning an empty dictionary.
+
+        :param session: The session object that the auth_plugin belongs to.
+        :type session: keystoneauth1.session.Session
+
+        :returns: Headers that are set to authenticate a message or None for
+                  failure. Note that when checking this value that the empty
+                  dict is a valid, non-failure response.
+        :rtype: dict
+        """
+        token = self.get_token(session)
+
+        if not token:
+            return None
+
+        return {IDENTITY_AUTH_HEADER_NAME: token}
+    
+    def get_token(self, session, **kwargs):
+        """Obtain a token.
+
+        How the token is obtained is up to the plugin. If it is still valid
+        it may be re-used, retrieved from cache or invoke an authentication
+        request against a server.
+
+        There are no required kwargs. They are passed directly to the auth
+        plugin and they are implementation specific.
+
+        Returning None will indicate that no token was able to be retrieved.
+
+        This function is misplaced as it should only be required for auth
+        plugins that use the 'X-Auth-Token' header. However due to the way
+        plugins evolved this method is required and often called to trigger an
+        authentication request on a new plugin.
+
+        When implementing a new plugin it is advised that you implement this
+        method, however if you don't require the 'X-Auth-Token' header override
+        the `get_headers` method instead.
+
+        :param session: A session object so the plugin can make HTTP calls.
+        :type session: keystoneauth1.session.Session
+
+        :return: A token to use.
+        :rtype: string
+        """
+        return None
 ```
 
