@@ -1,7 +1,6 @@
 #! /usr/bin/env python
 # -*- coding:utf-8 -*-
 
-from __future__ import division
 import zabbix
 
 
@@ -9,11 +8,11 @@ z = zabbix.Zabbix()
 host_group = z.get_hostgroups()
 
 
-def create_screen(screen_name, host_group, item_key, col_num, row_num):
+def create_screen(screen_name, hostgroup, item_key, col_num, row_num):
 
-    groupid = host_group[host_group]
-    hosts = z.get_hosts(linux_groupid)
-    host_list = linux_hosts.keys()
+    groupid = host_group[hostgroup]
+    hosts = z.get_hosts(groupid)
+    host_list = hosts.keys()
     host_list.sort()
 
     graphs = []
@@ -55,11 +54,11 @@ def create_screen(screen_name, host_group, item_key, col_num, row_num):
 
 
 
-def create_disk_screen(screen_name, host_group, item_key, col_num, row_num):
+def create_disk_screen(screen_name, hostgroup, item_key, col_num, row_num):
 
-    groupid = host_group[host_group]
-    hosts = z.get_hosts(linux_groupid)
-    host_list = linux_hosts.keys()
+    groupid = host_group[hostgroup]
+    hosts = z.get_hosts(groupid)
+    host_list = hosts.keys()
     host_list.sort()
 
     graphs = []
@@ -98,3 +97,7 @@ def create_disk_screen(screen_name, host_group, item_key, col_num, row_num):
         b += 1
 
     return z.create_screen(screen_name, col_num, row_num, screenitems)
+
+create_screen('HP_mem_screen', 'HP', 'vm.memory.size[available]', 3, 10)
+create_screen('Dell_mem_256g_screen', 'Dell_256g', 'vm.memory.size[available]', 3, 5)
+create_screen('Dell_mem_512g_screen', 'Dell_512g', 'vm.memory.size[available]', 3, 30)
