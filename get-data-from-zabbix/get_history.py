@@ -3,7 +3,6 @@
 
 from __future__ import division
 import csv
-#import NovaSQL
 import time
 import zabbix
 from datetime import datetime
@@ -13,7 +12,10 @@ from ConfigParser import RawConfigParser
 
 config = RawConfigParser()
 config.read('conf.cfg')
-start_time = (datetime.now() - timedelta(days = int(config.get('default', 'days'))))
+
+days=int(config.get('default', 'days'))
+hours=int(config.get('default', 'hours'))
+start_time = datetime.now() - timedelta(days=days, hours=hours)
 date = str(datetime.now())[:10]
 
 time_from = int(time.mktime(start_time.timetuple()))
@@ -41,6 +43,19 @@ def get_host_state(host_type):
         w.writerow(["{0}".format(host_type)])
         w.writerow(["CPU使用情况"])
         w.writerow(cpu_fields)
+
+        for host in host_list:
+            items = z.get_items(hosts[host])
+            cpu_itemid = items['cpureal.idletime']
+            cpu_idle = z.get_history_data(cpu_itemid, time_from, history=0, limit=None)
+            cpu_values = cpu_idle.values()
+            cpu_usage_latest = '{:.2%}'.format(1-cpu_values[0])
+            cpu_usage_max = '{:.2%}'.format(1-min(cpu_values))
+            cpu_usage_min = '{:.2%}'.format(1-mix(cpu_values))
+            cpu_usage_avg = '{:.2%}'.format(1-sum(cpu_values) / len(cpu_values))
+            cpu_row = [host, cpu_usage_latest, cpu_usage_max, cpu_usage_min, cpu_usage_avg]
+            w.writerow(cpu_row)
+        '''
         for host in host_list:
             items = z.get_items(hosts[host])
             cpu_itemid = items['system.cpu.load[percpu,avg15]']
@@ -51,7 +66,9 @@ def get_host_state(host_type):
             cpu_load_min = '{:.2%}'.format(min(cpu_values))
             cpu_load_avg = '{:.2%}'.format(sum(cpu_values) / len(cpu_values))
             cpu_row = [host, cpu_load_latest, cpu_load_max, cpu_load_min, cpu_load_avg]
+        
             w.writerow(cpu_row)
+        '''
         print("Complete {0} CPU resource".format(host_type))
 
         w.writerow([" "])
@@ -106,8 +123,6 @@ def get_nic_data(host_type):
             w.writerow(["{0}".format(host)])
             items = z.get_items(hosts[host])
 
-
-
             for nic in nics:
 
                 if not 'net.if.in[%s]'%nic in items.keys():
@@ -124,12 +139,12 @@ def get_nic_data(host_type):
                 #packets_out_data = zabbix.get_history_data(token, packets_out_itemid, time_from, limit=None)
                 #speed_data = zabbix.get_history_data(token, speed_itemid, time_from, limit=None)
 
-                in_values = map(lambda x : round(x / 1024, 2), in_data.values())
+                in_values = map(lambda x : round(x / (1024**2), 2), in_data.values())
                 in_max = max(in_values)
                 in_min = min(in_values)
                 in_avg = sum(in_values) / len(in_values)
 
-                out_values = map(lambda x : round(x / 1024, 2), out_data.values())
+                out_values = map(lambda x : round(x / (1024**2), 2), out_data.values())
                 out_max = max(out_values) 
                 out_min = min(out_values) 
                 out_avg = sum(out_values) / len(out_values)
@@ -169,6 +184,7 @@ def main():
     #get_host_state('Ceph')
     get_host_state('Discovered hosts')
     get_nic_data('Discovered hosts')
+    get_host_state('Windows_jumpservers')
     #get_nic_data('Controller node')
     print("Complete!!!!!!!!!!!!!!!!!!!!\n")
     print("Check the report: report/%s.csv"%date)
@@ -176,4 +192,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

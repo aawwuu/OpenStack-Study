@@ -152,7 +152,7 @@ class Zabbix():
         return self.result(data)[0]['graphid']
 
 
-    def create_screen(self,name,hsize,vsize, screenitems):
+    def create_screen(self,name,hsize,vsize,screenitems,private=0):
         data = {
                     "jsonrpc": "2.0",
                     "method": "screen.create",
@@ -160,7 +160,8 @@ class Zabbix():
                         "name": name,
                         "hsize": hsize,
                         "vsize": vsize,
-                        "screenitems": screenitems
+                        "screenitems": screenitems,
+                        "private": private
                         
                     },
                     "auth": self.token,
