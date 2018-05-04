@@ -59,4 +59,4 @@ neutron floatingip-update-ratelimit <floating ip> <rate limit>
 #查询dhcp在那个物理节点
 neutron dhcp-agent-list-hosting-net <network>
 # 查询router所在节点
-neutron l3-agent-list-hosting-router a23d4085-a9b3-4f07-85a8-544799ae534f 
+neutron l3-agent-list-hosting-router <router>
