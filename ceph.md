@@ -2,28 +2,42 @@
 
 ## 一、查看状态信息
 
+查询命令后加上"-fjson-pretty"可以输出更多详细信息
+
 ceph osd 使用率
 
 ```shell
-# ceph df
-# ceph osd df
+ceph df
+ceph osd df
 ```
 
-ceph 健康状态
+ceph 状态
 
 ```
-# ceph osd tree						#查看所有磁盘
-# ceph osd pool get rbd size		#查看ceph副本数
-# ceph -s							#查看ceph状态，正常所有osdmap是up和in，pgmap是active+clean
-# ceph -w
+ceph -s							#查看ceph状态，正常所有osdmap是up和in，pgmap是active+clean
+ceph health detail
+ceph osd tree						#查看所有磁盘
+ceph osd pool get rbd size		#查看ceph副本数
+ceph -w
+ceph stat
+ceph mon|osd stat
+ceph mon|osd|pg dump
+ceph quorum_status
+ceph osd pool stats
+osd pool get <pool_name> size|min_size|pg_num|pgp_num
+ceph pg dump_stuck stale|inactive|unclean|undersized|degraded
+ceph pg <pg> list_missing
+
+ceph daemon <osd|mon> perf dump
+ceph daemon osd.0 config show
 ```
 
 查看pool
 
 ```
-# ceph osd lspools
-# ceph osd pool ls
-# rados lspools
+ceph osd lspools
+ceph osd pool ls
+rados lspools
 ```
 
 ceph 进程
@@ -39,15 +53,68 @@ sudo systemctl status ceph-mds.target
 ```
 rbd -p $pool_name ls -l							# rbd 列表
 rbd -p $pool_name children $image_name			# 子image
-rbd info $pool_name/image_name							# 详细信息
+rbd info $pool_name/image_name					# 详细信息
 rbd du $image_name								# 实际占用空间
 ```
+
+## 二、启停进程
+
+启停mon进程
+
+```
+ssh $mon-node  #进入对应的mon节点
+#批量操作所有节点
+service ceph-mon-all stop|start|restart
+#单个节点
+service ceph-mon stop id=$node_id
+```
+
+启停osd进程
+
+```
+ssh $osd-node
+service ceph-osd-all stop|start|restart
+service ceph-osd stop id=$node-id
+```
+
+启停radosgw进程
+
+```
+ssh $radosgw-node
+service radosgw-all stop|start
+service apache2 stop|start
+```
+
+## 三、常见问题
+
+#### 1. HEALTH_ERR 2 pgs inconsistent; 2 scrub errors
+
+```
+ceph -s 
+ceph health detail
+ceph pg repair <$pgid>
+```
+
+#### 2. 删除故障osd
+
+```
+/etc/init.d/ceph stop <$osd_id>
+ceph stop osd.10
+ceph osd crush remove osd.10
+ceph auth del osd.10
+ceph osd rm 10
+umount /var/lib/ceph/osd/ceph-10
+```
+
+#### 3. scrub 与deep-scrub校验
+
+白天压力大是，集群自动关闭scrub与deep-scrub校验，夜间压力小时自动开启。
+
+## 四、Glance
 
 ceph在openstack中使用rbd管理块设备，在ceph中称为image，openstack中叫volume。image都放在pool中，不同的pool可以定义不同的副本数、pg数、放置策略等。image的命名一般是`pool_name/image_name@snap`形式。
 
 如果镜像为非raw格式，Nova创建虚拟机时不支持clone操作，因此必须从Glance中下载镜像。这就是为什么Glance使用Ceph存储时，镜像必须转化为raw格式的原因。
-
-## 二、Glance
 
 #### 1. 上传镜像
 
@@ -65,7 +132,7 @@ rbd -p ${GLANCE_POOL} snap rm ${IMAGE_ID}@snap
 rbd -p ${GLANCE_POOL} rm ${IMAGE_ID}
 ```
 
-## 三、 Nova
+## 五、 Nova
 
 #### 1 创建虚拟机
 
@@ -98,7 +165,7 @@ for image in $(rbd -p ${NOVA_POOL} ls | grep "^${SERVER_ID}");
 done
 ```
 
-## 四、 Cinder
+## 六、 Cinder
 
 #### 1 创建volume
 
