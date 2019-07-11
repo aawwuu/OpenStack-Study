@@ -110,6 +110,16 @@ umount /var/lib/ceph/osd/ceph-10
 
 白天压力大是，集群自动关闭scrub与deep-scrub校验，夜间压力小时自动开启。
 
+#### 4.查看延时
+
+```bash
+watch -n1 -d "ceph osd perf | sort -k3nr | head"
+```
+
+   可以用这个命令看延时  网宿科技的经验值是500客户就有明显卡顿
+
+起OSD的时候也能用watch -n1 "ceph -s |egrep 'slow|block|request'"查看异常  不能长时间停在block 如果有卡可以尝试先重启对应OSD
+
 ## 四、Glance
 
 ceph在openstack中使用rbd管理块设备，在ceph中称为image，openstack中叫volume。image都放在pool中，不同的pool可以定义不同的副本数、pg数、放置策略等。image的命名一般是`pool_name/image_name@snap`形式。
