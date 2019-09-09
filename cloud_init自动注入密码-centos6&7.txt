@@ -1,0 +1,30 @@
+#!/bin/sh
+# change password
+echo 'YourPassword' | passwd root --stdin
+
+# change ssh config
+sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config
+
+# new a partition
+fdisk -c -u /dev/vda<<EOF
+p
+n
+p
+3
+
+
+w
+EOF
+
+if [[ "`uname -r`" =~ "2.6.32" ]];then
+    service sshd restart
+    partx -a /dev/vda
+elif [[ "`uname -r`" =~ "3.10.0" ]];then
+    systemctl restart sshd
+    partprobe /dev/vda
+fi
+
+# extend lvm
+vgextend `vgdisplay|awk '/VG Name/{print $3}'` /dev/vda3
+lvextend -l +100%FREE -r `lvdisplay|awk '/LV Path.*root/{print $3}'`
+df -h
