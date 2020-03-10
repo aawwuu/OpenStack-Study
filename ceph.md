@@ -14,17 +14,18 @@ ceph osd df
 ceph 状态
 
 ```
+ceph -v 			#version
 ceph -s							#查看ceph状态，正常所有osdmap是up和in，pgmap是active+clean
 ceph health detail
 ceph osd tree						#查看所有磁盘
-ceph osd pool get rbd size		#查看ceph副本数
+ceph osd pool get <pool> size|min_size|pg_num|pgp_num		#查看ceph副本数
 ceph -w
 ceph stat
 ceph mon|osd stat
+ceph daemon <osd.id> status
 ceph mon|osd|pg dump
 ceph quorum_status
 ceph osd pool stats
-osd pool get <pool_name> size|min_size|pg_num|pgp_num
 ceph pg dump_stuck stale|inactive|unclean|undersized|degraded
 ceph pg <pg> list_missing
 
@@ -43,6 +44,9 @@ rados lspools
 ceph 进程
 
 ```
+service ceph-osd-all status
+service ceph-mon-all status
+
 sudo systemctl status ceph-osd.target
 sudo systemctl status ceph-mon.target
 sudo systemctl status ceph-mds.target
@@ -64,9 +68,9 @@ rbd du $image_name								# 实际占用空间
 ```
 ssh $mon-node  #进入对应的mon节点
 #批量操作所有节点
-service ceph-mon-all stop|start|restart
+service ceph-mon-all status|stop|start|restart
 #单个节点
-service ceph-mon stop id=$node_id
+service ceph-mon status|start|stop id=$node_id
 ```
 
 启停osd进程
@@ -74,7 +78,7 @@ service ceph-mon stop id=$node_id
 ```
 ssh $osd-node
 service ceph-osd-all stop|start|restart
-service ceph-osd stop id=$node-id
+service ceph-osd status|start|stop id=$node-id
 ```
 
 启停radosgw进程
@@ -87,7 +91,7 @@ service apache2 stop|start
 
 ## 三、常见问题
 
-#### 1. HEALTH_ERR 2 pgs inconsistent; 2 scrub errors
+#### 1. ceph pg repair
 
 ```
 ceph -s 
@@ -108,7 +112,7 @@ umount /var/lib/ceph/osd/ceph-10
 
 #### 3. scrub 与deep-scrub校验
 
-白天压力大是，集群自动关闭scrub与deep-scrub校验，夜间压力小时自动开启。
+白天压力大时，集群自动关闭scrub与deep-scrub校验，夜间压力小时自动开启。
 
 #### 4.查看延时
 
@@ -119,6 +123,43 @@ watch -n1 -d "ceph osd perf | sort -k3nr | head"
    可以用这个命令看延时  网宿科技的经验值是500客户就有明显卡顿
 
 起OSD的时候也能用watch -n1 "ceph -s |egrep 'slow|block|request'"查看异常  不能长时间停在block 如果有卡可以尝试先重启对应OSD
+
+#### 5. Openstack配置多ceph-backend后上传镜像
+
+手动上传镜像到ceph集群
+
+1）创建uuid
+
+```
+uuidgen  # 记录该uuid，将本地镜像命名至该uuid
+```
+
+2）记录镜像大小信息
+
+3）上传至ceph集群images pool中
+
+```
+rbd -p images import <path to image file>
+```
+
+4）创建镜像快照
+
+```
+rbd -p images snap create --image <uuid> --snap snap
+rbd -p images snap protect --image <uuid> --snap snap
+```
+
+通过glance上传镜像，指定location以及size
+
+```
+glance image-create --id <uuid> --name <name> --store rbd --disk-format raw --container-format bare --location <path to image file> --size <size>
+```
+
+检查镜像
+
+```
+glance image-list
+```
 
 ## 四、Glance
 
