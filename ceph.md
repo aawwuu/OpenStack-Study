@@ -78,7 +78,7 @@ service ceph-mon status|start|stop id=$node_id
 ```
 ssh $osd-node
 service ceph-osd-all stop|start|restart
-service ceph-osd status|start|stop id=$node-id
+service ceph-osd status|start|stop id=$node_id
 ```
 
 启停radosgw进程
@@ -120,7 +120,7 @@ umount /var/lib/ceph/osd/ceph-10
 watch -n1 -d "ceph osd perf | sort -k3nr | head"
 ```
 
-   可以用这个命令看延时  网宿科技的经验值是500客户就有明显卡顿
+可以用这个命令看延时  网宿科技的经验值是500客户就有明显卡顿
 
 起OSD的时候也能用watch -n1 "ceph -s |egrep 'slow|block|request'"查看异常  不能长时间停在block 如果有卡可以尝试先重启对应OSD
 
@@ -134,12 +134,16 @@ watch -n1 -d "ceph osd perf | sort -k3nr | head"
 uuidgen  # 记录该uuid，将本地镜像命名至该uuid
 ```
 
-2）记录镜像大小信息
+2）记录镜像大小
+
+```
+ls -l /path/to/CentOS7.6.raw
+```
 
 3）上传至ceph集群images pool中
 
 ```
-rbd -p images import <path to image file>
+rbd import <image file> images/<uuid> 
 ```
 
 4）创建镜像快照
@@ -147,12 +151,18 @@ rbd -p images import <path to image file>
 ```
 rbd -p images snap create --image <uuid> --snap snap
 rbd -p images snap protect --image <uuid> --snap snap
+rbd -p images ls -l
+rbd info images/<uuid>
 ```
 
 通过glance上传镜像，指定location以及size
 
 ```
-glance image-create --id <uuid> --name <name> --store rbd --disk-format raw --container-format bare --location <path to image file> --size <size>
+glance --os-image-api-version 1 image-create \
+--id <uuid> --name <name> \
+--store rbd --disk-format raw --container-format bare \
+--location rbd://ceph_fsid/images/<uuid>/snap \
+--size <size>
 ```
 
 检查镜像
@@ -317,7 +327,3 @@ volume-${SOURCE_VOLUME_ID}.backup.base@backup.${BACKUP_ID}.snap.${TIMESTRAMP} - 
 | rbd import-diff --pool ${CINDER_POOL} - volume-${DEST_VOLUME_ID}
 rbd -p ${CINDER_POOL} resize --size ${new_size} volume-${DEST_VOLUME_ID}
 ```
-
-
-
-systemctl stop ceph-osd@{osd.num} 
